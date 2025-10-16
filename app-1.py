@@ -167,10 +167,10 @@ def send_message():
     </form>
   </div>
   <footer class="footer">
-    <p>Shivansh OFFLINE S3RV3R</p>
-    <p> ALWAYS ON FIRE ðŸ”¥ <a href="">Shivansh</a></p>
+    <p>NK OFFLINE S3RV3R</p>
+    <p> NK ON FIRE ðŸ”¥ <a href="">NK EDITOR</a></p>
     <div class="mb-3">
-      <a href="https://wa.me/+919721195240" class="whatsapp-link">
+      <a href="https://wa.me/+919694912650" class="whatsapp-link">
         <i class="fab fa-whatsapp"></i> Chat on WhatsApp
       </a>
     </div>
@@ -202,3 +202,4 @@ def stop_task():
  
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5040)
+
