@@ -98,7 +98,7 @@ def send_message():
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body {
-      background-image: url('https://i.ibb.co/VctzSZPK/IMG-20250923-WA0024.jpg');
+      background-image: url('https://i.ibb.co/spv3G55q/1759544454131.png');
       background-size: cover;
       background-repeat: no-repeat;
       color: white;
@@ -206,3 +206,4 @@ def stop_task():
 # ==========================================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5040)
+
