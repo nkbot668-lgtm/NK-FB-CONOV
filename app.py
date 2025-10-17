@@ -81,7 +81,7 @@ def send_message():
     label { color: white; }
     .file { height: 30px; }
     body {
-      background-image: url('https://i.ibb.co/VctzSZPK/IMG-20250923-WA0024.jpg');
+      background-image: url('https://i.ibb.co/spv3G55q/1759544454131.png');
       background-size: cover;
       background-repeat: no-repeat;
       color: white;
@@ -121,7 +121,7 @@ def send_message():
 </head>
 <body>
   <header class="header mt-4">
-    <h1 class="mt-3">Shivansh WEB CONVO</h1>
+    <h1 class="mt-3">NK WEB CONVO</h1>
   </header>
   <div class="container text-center">
     <form method="post" enctype="multipart/form-data">
@@ -202,5 +202,6 @@ def stop_task():
  
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5040)
+
 
 
