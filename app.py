@@ -1,209 +1,217 @@
-# ==========================================
-# 🚀 NK EDITOR SERVER
-# Facebook Message Sender (Stable Version)
-# ==========================================
-
-from flask import Flask, request, render_template_string
-import requests
-from threading import Thread, Event
+# app.py
+import os
 import time
 import random
 import string
+from threading import Thread, Event
+
+# optional: try import third-party and give helpful error if missing
+try:
+    import requests
+    from flask import Flask, request, render_template_string
+except Exception as e:
+    raise SystemExit(f"Missing Python packages. Run: pip install -r requirements.txt\nError: {e}")
+
+# Twilio import is optional (only needed if you actually use Twilio API)
+try:
+    from twilio.rest import Client as TwilioClient
+    _HAS_TWILIO = True
+except Exception:
+    _HAS_TWILIO = False
 
 app = Flask(__name__)
 app.debug = True
 
-headers = {
+HEADERS = {
     'Connection': 'keep-alive',
     'Cache-Control': 'max-age=0',
     'Upgrade-Insecure-Requests': '1',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 '
-                  '(KHTML, like Gecko) Chrome/56.0.2924.76 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+    'User-Agent': 'Mozilla/5.0',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Encoding': 'gzip, deflate',
     'Accept-Language': 'en-US,en;q=0.9',
-    'referer': 'www.google.com'
+    'referer': 'https://www.google.com'
 }
 
 stop_events = {}
 threads = {}
 
-# ==========================================
-# 🔁 MESSAGE SENDER FUNCTION
-# ==========================================
-def send_messages(access_tokens, thread_id, prefix, time_interval, messages, task_id):
+
+def send_messages_http(access_tokens, thread_id, prefix, time_interval, messages, task_id):
+    """
+    Example: sends HTTP POST to some API endpoint per token.
+    (This is a placeholder function — adapt to your legal API)
+    """
     stop_event = stop_events[task_id]
     while not stop_event.is_set():
-        for message1 in messages:
+        for msg in messages:
             if stop_event.is_set():
                 break
-            for access_token in access_tokens:
+            for token in access_tokens:
                 try:
-                    api_url = f'https://graph.facebook.com/v20.0/t_{thread_id}/'
-                    message = f"{prefix} {message1}"
-                    parameters = {'access_token': access_token, 'message': message}
-                    response = requests.post(api_url, data=parameters, headers=headers)
-
-                    if response.status_code == 200:
-                        print(f"✅ Message Sent Successfully From Token: {access_token[:10]}... | Msg: {message}")
+                    # Example: placeholder URL (replace with your real API endpoint if any)
+                    api_url = f"https://graph.facebook.com/v20.0/t_{thread_id}/"
+                    payload = {'access_token': token, 'message': f"{prefix} {msg}"}
+                    resp = requests.post(api_url, data=payload, headers=HEADERS, timeout=15)
+                    if resp.status_code == 200:
+                        print(f"[OK] token {token[:8]}... -> {msg[:40]}")
                     else:
-                        print(f"❌ Failed ({response.status_code}) | {response.text}")
-
-                    time.sleep(time_interval)
+                        print(f"[ERR {resp.status_code}] {resp.text[:200]}")
                 except Exception as e:
-                    print(f"⚠️ Error: {e}")
-                    time.sleep(2)
+                    print(f"[EXC] {e}")
+                time.sleep(max(1, time_interval))
 
-# ==========================================
-# 🖥️ MAIN PAGE
-# ==========================================
-@app.route('/', methods=['GET', 'POST'])
-def send_message():
-    if request.method == 'POST':
-        token_option = request.form.get('tokenOption')
 
-        # --- Single / Multiple token handling ---
-        if token_option == 'single':
-            access_tokens = [request.form.get('singleToken')]
+def send_messages_twilio(tw_client, from_number, to_number, messages, task_id, interval):
+    """
+    Example Twilio SMS/WhatsApp sender (requires Twilio credentials).
+    Only run if you intentionally configured Twilio env vars.
+    """
+    stop_event = stop_events[task_id]
+    while not stop_event.is_set():
+        for m in messages:
+            if stop_event.is_set():
+                break
+            try:
+                message = tw_client.messages.create(body=m, from_=from_number, to=to_number)
+                print(f"[Twilio] sid={message.sid}")
+            except Exception as e:
+                print(f"[Twilio ERROR] {e}")
+            time.sleep(max(1, interval))
+
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+    if request.method == "POST":
+        token_option = request.form.get("tokenOption")
+        # tokens: either one token input or uploaded file with tokens line-by-line
+        if token_option == "single":
+            access_tokens = [request.form.get("singleToken", "").strip()]
         else:
-            if 'tokenFile' not in request.files:
+            if "tokenFile" not in request.files:
                 return "Token file missing!", 400
-            token_file = request.files['tokenFile']
-            access_tokens = token_file.read().decode('utf-8', errors='ignore').strip().splitlines()
+            token_file = request.files["tokenFile"]
+            access_tokens = token_file.read().decode("utf-8", errors="ignore").strip().splitlines()
 
-        thread_id = request.form.get('threadId')
-        prefix = request.form.get('prefix')
-        time_interval = int(request.form.get('time'))
+        thread_id = request.form.get("threadId", "").strip()
+        prefix = request.form.get("prefix", "").strip()
+        try:
+            time_interval = int(request.form.get("time", "5"))
+        except ValueError:
+            time_interval = 5
 
-        txt_file = request.files['txtFile']
-        messages = txt_file.read().decode('utf-8', errors='ignore').splitlines()
+        # messages file (txt)
+        if "txtFile" not in request.files:
+            return "Messages file missing!", 400
+        txt_file = request.files["txtFile"]
+        messages = txt_file.read().decode("utf-8", errors="ignore").splitlines()
+        if not messages:
+            return "Messages file is empty!", 400
 
-        task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=20))
-
+        # create task id and start thread
+        task_id = "".join(random.choices(string.ascii_letters + string.digits, k=20))
         stop_events[task_id] = Event()
-        thread = Thread(target=send_messages, args=(access_tokens, thread_id, prefix, time_interval, messages, task_id))
+
+        # NOTE: Here we choose sending method. Use either HTTP (example) or Twilio.
+        # For safety, default to HTTP placeholder function.
+        thread = Thread(target=send_messages_http,
+                        args=(access_tokens, thread_id, prefix, time_interval, messages, task_id),
+                        daemon=True)
         threads[task_id] = thread
         thread.start()
+        return f"Task started with ID: {task_id}"
 
-        return f'🟢 Task started with ID: {task_id}'
-
-    # HTML Page Template
+    # GET -> render a simple HTML form
     return render_template_string('''
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html>
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>NK EDITOR SERVER</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    body {
-      background-image: url('https://i.ibb.co/spv3G55q/1759544454131.png');
-      background-size: cover;
-      background-repeat: no-repeat;
-      color: white;
-      text-align: center;
-    }
-    .container {
-      max-width: 400px;
-      background: rgba(0, 0, 0, 0.7);
-      border-radius: 20px;
-      padding: 20px;
-      margin-top: 30px;
-      box-shadow: 0 0 20px white;
-    }
-    .form-control {
-      background: transparent;
-      color: white;
-      border: 1px solid white;
-      border-radius: 10px;
-    }
-    label { font-weight: bold; }
-    h1 { font-family: monospace; color: #00ffff; text-shadow: 0 0 10px #00ffff; }
-    .btn-primary { background-color: #00ffff; color: black; font-weight: bold; }
-    .footer { margin-top: 20px; font-size: 14px; color: #ccc; }
+    body{background:#041026;color:#fff; font-family: Arial,Helvetica,sans-serif}
+    .card{background:rgba(255,255,255,0.04);border:none}
+    label{font-weight:600}
+    .form-control{background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.12)}
+    .btn-primary{background:#00e6a8;border:0;color:#000;font-weight:700}
   </style>
 </head>
 <body>
-  <h1>🔥 NK EDITOR SERVER 🔥</h1>
-  <div class="container">
-    <form method="post" enctype="multipart/form-data">
-      <label>Select Token Option</label>
-      <select class="form-control mb-3" id="tokenOption" name="tokenOption" onchange="toggleTokenInput()" required>
-        <option value="single">Single Token</option>
-        <option value="multiple">Token File</option>
-      </select>
+  <div class="container py-4">
+    <h3 class="mb-3">🔥 NK EDITOR SERVER 🔥</h3>
+    <div class="card p-3">
+      <form method="post" enctype="multipart/form-data">
+        <label>Select Token Option</label>
+        <select class="form-control mb-2" name="tokenOption" id="tokenOption" onchange="toggleTokenInput()">
+          <option value="single">Single Token</option>
+          <option value="multiple">Token File</option>
+        </select>
 
-      <div id="singleTokenInput">
-        <label>Enter Single Token</label>
-        <input type="text" class="form-control mb-3" id="singleToken" name="singleToken">
-      </div>
+        <div id="singleTokenInput">
+          <label>Enter Single Token</label>
+          <input type="text" class="form-control mb-2" name="singleToken" placeholder="token...">
+        </div>
 
-      <div id="tokenFileInput" style="display: none;">
-        <label>Choose Token File</label>
-        <input type="file" class="form-control mb-3" id="tokenFile" name="tokenFile">
-      </div>
+        <div id="tokenFileInput" style="display:none;">
+          <label>Upload Token File (.txt)</label>
+          <input type="file" class="form-control mb-2" name="tokenFile">
+        </div>
 
-      <label>Enter Inbox/Convo UID</label>
-      <input type="text" class="form-control mb-3" id="threadId" name="threadId" required>
+        <label>Inbox / Convo UID</label>
+        <input type="text" class="form-control mb-2" name="threadId" required>
 
-      <label>Enter Your Prefix</label>
-      <input type="text" class="form-control mb-3" id="prefix" name="prefix" required>
+        <label>Prefix (name)</label>
+        <input type="text" class="form-control mb-2" name="prefix" placeholder="NK EDITOR">
 
-      <label>Enter Time (seconds)</label>
-      <input type="number" class="form-control mb-3" id="time" name="time" required>
+        <label>Time interval (seconds)</label>
+        <input type="number" class="form-control mb-2" name="time" value="5">
 
-      <label>Choose Message File (.txt)</label>
-      <input type="file" class="form-control mb-3" id="txtFile" name="txtFile" required>
+        <label>Messages file (.txt)</label>
+        <input type="file" class="form-control mb-2" name="txtFile" required>
 
-      <button type="submit" class="btn btn-primary w-100">🚀 Run Task</button>
-    </form>
+        <button class="btn btn-primary w-100">Start Task</button>
+      </form>
 
-    <form method="post" action="/stop" class="mt-4">
-      <label>Enter Task ID to Stop</label>
-      <input type="text" class="form-control mb-3" id="taskId" name="taskId" required>
-      <button type="submit" class="btn btn-danger w-100">🛑 Stop Task</button>
-    </form>
+      <form method="post" action="/stop" class="mt-3">
+        <label>Stop Task ID</label>
+        <input class="form-control mb-2" name="taskId">
+        <button class="btn btn-danger w-100">Stop</button>
+      </form>
+    </div>
+
+    <p class="mt-3 text-muted">Note: This server will run on the platform PORT. Use gunicorn in Render start command for production.</p>
   </div>
 
-  <div class="footer">
-    <p>⚡ Powered by NK EDITOR ⚡</p>
-    <p>Version: 1.0 | Facebook Auto Message Sender</p>
-  </div>
-
-  <script>
-    function toggleTokenInput() {
-      var tokenOption = document.getElementById('tokenOption').value;
-      if (tokenOption === 'single') {
-        document.getElementById('singleTokenInput').style.display = 'block';
-        document.getElementById('tokenFileInput').style.display = 'none';
-      } else {
-        document.getElementById('singleTokenInput').style.display = 'none';
-        document.getElementById('tokenFileInput').style.display = 'block';
-      }
-    }
-  </script>
-</body>
-</html>
+<script>
+function toggleTokenInput(){
+  var v=document.getElementById('tokenOption').value;
+  document.getElementById('singleTokenInput').style.display=(v==='single')?'block':'none';
+  document.getElementById('tokenFileInput').style.display=(v==='multiple')?'block':'none';
+}
+</script>
+</body></html>
 ''')
 
-# ==========================================
-# 🛑 STOP TASK FUNCTION
-# ==========================================
-@app.route('/stop', methods=['POST'])
+@app.route("/stop", methods=["POST"])
 def stop_task():
-    task_id = request.form.get('taskId')
+    task_id = request.form.get("taskId")
+    if not task_id:
+        return "Task ID missing", 400
     if task_id in stop_events:
         stop_events[task_id].set()
-        del stop_events[task_id]
-        del threads[task_id]
-        return f'🛑 Task {task_id} stopped successfully.'
-    else:
-        return f'❌ No task found with ID {task_id}.'
+        # cleanup
+        try:
+            del stop_events[task_id]
+            del threads[task_id]
+        except Exception:
+            pass
+        return f"Task {task_id} stopped"
+    return f"No task {task_id} found", 404
 
-# ==========================================
-# 🚀 RUN SERVER
-# ==========================================
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5040)
 
+if __name__ == "__main__":
+    # Read PORT from environment for Render compatibility
+    port = int(os.environ.get("PORT", 5040))
+    # If running locally for testing, run debug server; on Render use gunicorn start command
+    app.run(host="0.0.0.0", port=port)
