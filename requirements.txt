@@ -1,2 +1,3 @@
-flask
-gunicorn
+git add requirements.txt
+git commit -m "Add Flask and Gunicorn"
+git push
